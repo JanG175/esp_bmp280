@@ -1,0 +1,69 @@
+/**
+ * @file esp_bmp280.h
+ * @author JanG175
+ * @brief ESP-IDF component for the BMP280 temperature and pressure sensor (I2C only)
+ * 
+ * @copyright Apache 2.0
+*/
+
+#include <stdio.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "driver/i2c.h"
+#include "esp_log.h"
+
+#define BMP_I2C_ADDRESS_0 0x76 // if SDO pin is low
+#define BMP_I2C_ADDRESS_1 0x77 // if SDO pin is high
+
+#define BMP280_MAX_FREQ   10000000 // 10 MHz
+
+#define BMP280_TIMEOUT    (100 / portTICK_PERIOD_MS)
+
+// register map
+#define BMP280_TEMP_XLSB  0xFC
+#define BMP280_TEMP_LSB   0xFB
+#define BMP280_TEMP_MSB   0xFA
+#define BMP280_PRESS_XLSB 0xF9
+#define BMP280_PRESS_LSB  0xF8
+#define BMP280_PRESS_MSB  0xF7
+#define BMP280_CONFIG     0xF5
+#define BMP280_CTRL_MEAS  0xF4
+#define BMP280_STATUS     0xF3
+#define BMP280_RESET      0xE0
+#define BMP280_ID         0xD0
+#define BMP280_CALIB_00   0x88
+#define BMP280_CALIB_25   0xA1
+
+// reset states
+#define BMP280_RESET_0    0x00
+#define BMP280_RESET_1    0x80
+#define BMP280_RESET_2    0x58
+
+typedef struct {
+    uint8_t i2c_addr;
+    i2c_port_t i2c_port;
+    gpio_num_t sda_pin;
+    gpio_num_t scl_pin;
+    uint32_t i2c_freq;
+} bmp280_conf_t;
+
+
+void bmp280_init(bmp280_conf_t bmp);
+
+void bmp280_deinit(bmp280_conf_t bmp);
+
+void bmp280_read_id(bmp280_conf_t bmp, uint8_t* id);
+
+void bmp280_reset(bmp280_conf_t bmp);
+
+void bmp280_read_status(bmp280_conf_t bmp, uint8_t* status);
+
+void bmp280_read_ctrl_meas(bmp280_conf_t bmp, uint8_t* ctrl_meas);
+
+void bmp280_write_ctrl_meas(bmp280_conf_t bmp, uint8_t* ctrl_meas);
+
+void bmp280_read_config(bmp280_conf_t bmp, uint8_t* config);
+
+void bmp280_write_config(bmp280_conf_t bmp, uint8_t* config);
+
+void bmp280_read_temp_and_press(bmp280_conf_t bmp, float* temp_degC, float* press_Pa);
