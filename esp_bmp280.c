@@ -22,13 +22,30 @@ static const char *TAG = "BMP280";
 */
 static void i2c_send(bmp280_conf_t bmp, uint8_t reg, uint8_t* data, uint32_t data_len)
 {
+    esp_err_t err;
     i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-    i2c_master_start(cmd);
-    i2c_master_write_byte(cmd, (bmp.i2c_addr << 1) | I2C_MASTER_WRITE, I2C_MASTER_ACK);
-    i2c_master_write_byte(cmd, reg, I2C_MASTER_ACK);
-    i2c_master_write(cmd, data, data_len, I2C_MASTER_ACK);
-    i2c_master_stop(cmd);
-    i2c_master_cmd_begin(bmp.i2c_port, cmd, BMP280_TIMEOUT);
+
+    err = i2c_master_start(cmd);
+    assert(err == ESP_OK);
+
+    err = i2c_master_write_byte(cmd, (bmp.i2c_addr << 1) | I2C_MASTER_WRITE, true);
+    assert(err == ESP_OK);
+
+    for (uint32_t i = 0; i < data_len; i++)
+    {
+        err = i2c_master_write_byte(cmd, reg + i, true);
+        assert(err == ESP_OK);
+
+        err = i2c_master_write_byte(cmd, *(data + i), true);
+        assert(err == ESP_OK);
+    }
+
+    err = i2c_master_stop(cmd);
+    assert(err == ESP_OK);
+
+    err = i2c_master_cmd_begin(bmp.i2c_port, cmd, BMP280_TIMEOUT);
+    assert(err == ESP_OK);
+
     i2c_cmd_link_delete(cmd);
 }
 
@@ -43,26 +60,39 @@ static void i2c_send(bmp280_conf_t bmp, uint8_t reg, uint8_t* data, uint32_t dat
 */
 static void i2c_read(bmp280_conf_t bmp, uint8_t reg, uint8_t* data, uint32_t data_len)
 {
+    esp_err_t err;
     i2c_cmd_handle_t cmd = i2c_cmd_link_create();
 
-    i2c_master_start(cmd);
-    i2c_master_write_byte(cmd, (bmp.i2c_addr << 1) | I2C_MASTER_WRITE, I2C_MASTER_ACK);
-    i2c_master_write_byte(cmd, reg, I2C_MASTER_ACK);
-    i2c_master_start(cmd);
-    i2c_master_write_byte(cmd, (bmp.i2c_port << 1) | I2C_MASTER_READ, I2C_MASTER_ACK);
+    err = i2c_master_start(cmd);
+    assert(err == ESP_OK);
 
-    for (uint32_t i = 0; i < data_len - 1; i++)
-        i2c_master_read_byte(cmd, &data[i], I2C_MASTER_ACK);
-    i2c_master_read_byte(cmd, &data[data_len - 1], I2C_MASTER_NACK);
+    err = i2c_master_write_byte(cmd, (bmp.i2c_addr << 1) | I2C_MASTER_WRITE, true);
+    assert(err == ESP_OK);
 
-    i2c_master_stop(cmd);
-    i2c_master_cmd_begin(bmp.i2c_port, cmd, BMP280_TIMEOUT);
+    err = i2c_master_write_byte(cmd, reg, true);
+    assert(err == ESP_OK);
+
+    err = i2c_master_start(cmd);
+    assert(err == ESP_OK);
+
+    err = i2c_master_write_byte(cmd, (bmp.i2c_addr << 1) | I2C_MASTER_READ, true);
+    assert(err == ESP_OK);
+
+    err = i2c_master_read(cmd, data, data_len, I2C_MASTER_LAST_NACK);
+    assert(err == ESP_OK);
+
+    err = i2c_master_stop(cmd);
+    assert(err == ESP_OK);
+
+    err = i2c_master_cmd_begin(bmp.i2c_port, cmd, BMP280_TIMEOUT);
+    assert(err == ESP_OK);
+
     i2c_cmd_link_delete(cmd);
 }
 
 
 /**
- * @brief compensate temperature and pressure readings
+ * @brief compensate temperature and pressure readings using integer values
  * 
  * @param bmp struct with BMP280 parameters
  * @param adc_T temperature reading
@@ -70,7 +100,7 @@ static void i2c_read(bmp280_conf_t bmp, uint8_t reg, uint8_t* data, uint32_t dat
  * @param adc_P pressure reading
  * @param P pointer to compensated pressure
 */
-static void bmp280_compensate_T_P(bmp280_conf_t bmp, int32_t adc_T, int32_t* T, int32_t adc_P, uint32_t* P)
+static void bmp280_compensate_T_P_int(bmp280_conf_t bmp, int32_t adc_T, float* T, int32_t adc_P, float* P)
 {
     uint8_t dig_calib[24];
     i2c_read(bmp, BMP280_CALIB_00, dig_calib, 24);
@@ -89,15 +119,16 @@ static void bmp280_compensate_T_P(bmp280_conf_t bmp, int32_t adc_T, int32_t* T, 
     int16_t dig_P8 = ((int16_t)dig_calib[21] << 8) | (int16_t)dig_calib[20];
     int16_t dig_P9 = ((int16_t)dig_calib[23] << 8) | (int16_t)dig_calib[22];
 
-    int32_t tvar1, tvar2, t_fine;
+    int32_t tvar1, tvar2, t_fine, temp;
     int64_t pvar1, pvar2, p;
+    uint32_t press;
 
     // temperature
     tvar1 = ((((adc_T >> 3) - ((int32_t)dig_T1 << 1))) * ((int32_t)dig_T2)) >> 11;
     tvar2 = (((((adc_T >> 4) - ((int32_t)dig_T1)) * ((adc_T >> 4) - ((int32_t)dig_T1))) >> 12) * ((int32_t)dig_T3)) >> 14;
     t_fine = tvar1 + tvar2;
 
-    *T = (t_fine * 5 + 128) >> 8;
+    temp = (t_fine * 5 + 128) >> 8;
 
     // pressure
     pvar1 = ((int64_t)t_fine) - 128000;
@@ -118,7 +149,69 @@ static void bmp280_compensate_T_P(bmp280_conf_t bmp, int32_t adc_T, int32_t* T, 
     pvar2 = (((int64_t)dig_P8) * p) >> 19;
     p = ((p + pvar1 + pvar2) >> 8) + (((int64_t)dig_P7) << 4);
 
-    *P = (uint32_t)p;
+    press = (uint32_t)p;
+
+    *T = (float)temp / 100.0f;
+    *P = (float)press / 256.0f;
+}
+
+
+/**
+ * @brief compensate temperature and pressure readings using double values
+ * 
+ * @param bmp struct with BMP280 parameters
+ * @param adc_T temperature reading
+ * @param T pointer to compensated temperature
+ * @param adc_P pressure reading
+ * @param P pointer to compensated pressure
+*/
+static void bmp280_compensate_T_P_double(bmp280_conf_t bmp, int32_t adc_T, double* T, int32_t adc_P, double* P)
+{
+    uint8_t dig_calib[24];
+    i2c_read(bmp, BMP280_CALIB_00, dig_calib, 24);
+
+    uint16_t dig_T1 = ((uint16_t)dig_calib[1] << 8) | (uint16_t)dig_calib[0];
+    int16_t dig_T2 = ((int16_t)dig_calib[3] << 8) | (int16_t)dig_calib[2];
+    int16_t dig_T3 = ((int16_t)dig_calib[5] << 8) | (int16_t)dig_calib[4];
+
+    uint16_t dig_P1 = ((uint16_t)dig_calib[7] << 8) | (uint16_t)dig_calib[6];
+    int16_t dig_P2 = ((int16_t)dig_calib[9] << 8) | (int16_t)dig_calib[8];
+    int16_t dig_P3 = ((int16_t)dig_calib[11] << 8) | (int16_t)dig_calib[10];
+    int16_t dig_P4 = ((int16_t)dig_calib[13] << 8) | (int16_t)dig_calib[12];
+    int16_t dig_P5 = ((int16_t)dig_calib[15] << 8) | (int16_t)dig_calib[14];
+    int16_t dig_P6 = ((int16_t)dig_calib[17] << 8) | (int16_t)dig_calib[16];
+    int16_t dig_P7 = ((int16_t)dig_calib[19] << 8) | (int16_t)dig_calib[18];
+    int16_t dig_P8 = ((int16_t)dig_calib[21] << 8) | (int16_t)dig_calib[20];
+    int16_t dig_P9 = ((int16_t)dig_calib[23] << 8) | (int16_t)dig_calib[22];
+
+    double tvar1, tvar2, t_fine, pvar1, pvar2, p;
+
+    tvar1 = (((double)adc_T) / 16384.0 - ((double)dig_T1) / 1024.0) * ((double)dig_T2);
+    tvar2 = ((((double)adc_T) / 131072.0 - ((double)dig_T1)/8192.0) * (((double)adc_T) / 131072.0 - ((double)dig_T1) / 8192.0)) * ((double)dig_T3);
+    t_fine = tvar1 + tvar2;
+    *T = (tvar1 + tvar2) / 5120.0; 
+
+    pvar1 = (t_fine / 2.0) - 64000.0;
+    pvar2 = pvar1 * pvar1 * ((double)dig_P6) / 32768.0;
+    pvar2 = pvar2 + pvar1 * ((double)dig_P5) * 2.0;
+    pvar2 = (pvar2 / 4.0) + (((double)dig_P4) * 65536.0);
+    pvar1 = (((double)dig_P3) * pvar1 * pvar1 / 524288.0 + ((double)dig_P2) * pvar1) / 524288.0;
+    pvar1 = (1.0 + pvar1 / 32768.0) * ((double)dig_P1);
+
+    if (pvar1 == 0.0)
+    {
+        *P = 0.0;
+        ESP_LOGE(TAG, "Dividing by 0!");
+        return;
+    }
+
+    p = 1048576.0 - (double)adc_P;
+    p = (p - (pvar2 / 4096.0)) * 6250.0 / pvar1;
+    pvar1 = ((double)dig_P9) * p * p / 2147483648.0;
+    pvar2 = p * ((double)dig_P8) / 32768.0;
+    p = p + (pvar1 + pvar2 + ((double)dig_P7)) / 16.0;
+
+    *P = p;
 }
 
 
@@ -126,8 +219,9 @@ static void bmp280_compensate_T_P(bmp280_conf_t bmp, int32_t adc_T, int32_t* T, 
  * @brief initialize the BMP280
  * 
  * @param bmp struct with BMP280 parameters
+ * @param res sensor resolution
 */
-void bmp280_init(bmp280_conf_t bmp)
+void bmp280_init(bmp280_conf_t bmp, enum bmp280_res res)
 {
     if (bmp.i2c_freq > BMP280_MAX_FREQ)
     {
@@ -147,6 +241,54 @@ void bmp280_init(bmp280_conf_t bmp)
 
     ESP_ERROR_CHECK(i2c_param_config(bmp.i2c_port, &i2c_config));
     ESP_ERROR_CHECK(i2c_driver_install(bmp.i2c_port, i2c_config.mode, 0, 0, 0));
+
+    // reset
+    bmp280_reset(bmp);
+    vTaskDelay(100 / portTICK_PERIOD_MS);
+
+    // set mode
+    uint8_t ctrl_meas = 0;
+    uint8_t config = 0;
+    switch (res)
+    {
+        case BMP280_ULTRA_LOW_POWER:
+            ctrl_meas = 0b00100101; // osrs_t = x1 (0b001), osrs_p = x1 (0b001), mode = forced (0b01)
+            config = 0b00000000; // t_sb = 0.5 ms (0b000), filter = off (0b000), spi3w_en = 0 (0b0)
+            break;
+        case BMP280_LOW_POWER:
+            ctrl_meas = 0b00101011; // osrs_t = x1 (0b001), osrs_p = x2 (0b010), mode = normal (0b11)
+            config = 0b00000000; // t_sb = 0.5 ms (0b000), filter = off (0b000), spi3w_en = 0 (0b0)
+            break;
+        case BMP280_STANDARD:
+            ctrl_meas = 0b00101111; // osrs_t = x1 (0b001), osrs_p = x4 (0b011), mode = normal (0b11)
+            config = 0b00001000; // t_sb = 0.5 ms (0b000), filter = x4 (0b010), spi3w_en = 0 (0b0)
+            break;
+        case BMP280_STANDARD_PLUS:
+            ctrl_meas = 0b00101111; // osrs_t = x1 (0b001), osrs_p = x4 (0b011), mode = normal (0b11)
+            config = 0b00010000; // t_sb = 0.5 ms (0b000), filter = x16 (0b100), spi3w_en = 0 (0b0)
+            break;
+        case BMP280_HIGH_RES:
+            ctrl_meas = 0b01010111; // osrs_t = x2 (0b010), osrs_p = x16 (0b101), mode = normal (0b11)
+            config = 0b00001000; // t_sb = 0.5 ms (0b000), filter = x4 (0b010), spi3w_en = 0 (0b0)
+            break;
+        case BMP280_ULTRA_HIGH_RES:
+            ctrl_meas = 0b01010111; // osrs_t = x2 (0b010), osrs_p = x16 (0b101), mode = normal (0b11)
+            config = 0b00010000; // t_sb = 0.5 ms (0b000), filter = x16 (0b100), spi3w_en = 0 (0b0)
+            break;
+        default:
+            ESP_LOGE(TAG, "Invalid resolution!");
+            return;
+    }
+
+    bmp280_write_ctrl_meas(bmp, &ctrl_meas);
+    bmp280_write_config(bmp, &config);
+
+    double temp_degC = 0.0;
+    double press_Pa = 0.0;
+    bmp280_read_temp_and_press(bmp, &temp_degC, &press_Pa);
+
+    bmp280_read_config(bmp, &config);
+    bmp280_read_ctrl_meas(bmp, &ctrl_meas);
 }
 
 
@@ -197,7 +339,7 @@ void bmp280_read_status(bmp280_conf_t bmp, uint8_t* status)
 
     if (*status & 0b00001000)
         ESP_LOGI(TAG, "BMP280 is measuring!");
-    if (*status & 0b00000001)
+    else if (*status & 0b00000001)
         ESP_LOGI(TAG, "BMP280 is updating!");
 }
 
@@ -214,31 +356,31 @@ void bmp280_read_ctrl_meas(bmp280_conf_t bmp, uint8_t* ctrl_meas)
 
     // osrs_t
     if ((*ctrl_meas & 0b11100000) == 0b00000000)
-        ESP_LOGI(TAG, "skipped (output set to 0x80000)");
+        ESP_LOGI(TAG, "osrs_t skipped (output set to 0x80000)");
     else if ((*ctrl_meas & 0b11100000) == 0b00100000)
-        ESP_LOGI(TAG, "oversampling x1");
+        ESP_LOGI(TAG, "osrs_t oversampling x1");
     else if ((*ctrl_meas & 0b11100000) == 0b01000000)
-        ESP_LOGI(TAG, "oversampling x2");
+        ESP_LOGI(TAG, "osrs_t oversampling x2");
     else if ((*ctrl_meas & 0b11100000) == 0b01100000)
-        ESP_LOGI(TAG, "oversampling x4");
+        ESP_LOGI(TAG, "osrs_t oversampling x4");
     else if ((*ctrl_meas & 0b11100000) == 0b10000000)
-        ESP_LOGI(TAG, "oversampling x8");
+        ESP_LOGI(TAG, "osrs_t oversampling x8");
     else
-        ESP_LOGI(TAG, "oversampling x16");
+        ESP_LOGI(TAG, "osrs_t oversampling x16");
 
     // osrs_p
     if ((*ctrl_meas & 0b00011100) == 0b00000000)
-        ESP_LOGI(TAG, "skipped (output set to 0x80000)");
+        ESP_LOGI(TAG, "osrs_p skipped (output set to 0x80000)");
     else if ((*ctrl_meas & 0b00011100) == 0b00000100)
-        ESP_LOGI(TAG, "oversampling x1");
+        ESP_LOGI(TAG, "osrs_p oversampling x1");
     else if ((*ctrl_meas & 0b00011100) == 0b00001000)
-        ESP_LOGI(TAG, "oversampling x2");
+        ESP_LOGI(TAG, "osrs_p oversampling x2");
     else if ((*ctrl_meas & 0b00011100) == 0b00001100)
-        ESP_LOGI(TAG, "oversampling x4");
+        ESP_LOGI(TAG, "osrs_p oversampling x4");
     else if ((*ctrl_meas & 0b00011100) == 0b00010000)
-        ESP_LOGI(TAG, "oversampling x8");
+        ESP_LOGI(TAG, "osrs_p oversampling x8");
     else
-        ESP_LOGI(TAG, "oversampling x16");
+        ESP_LOGI(TAG, "osrs_p oversampling x16");
 
     // mode
     if ((*ctrl_meas & 0b00000011) == 0b00000000)
@@ -320,10 +462,11 @@ void bmp280_write_config(bmp280_conf_t bmp, uint8_t* config)
 {
     uint8_t old_config = 0;
     i2c_read(bmp, BMP280_CONFIG, &old_config, 1);
+    vTaskDelay(1);
 
     uint8_t bit1 = (old_config & 0b00000010) >> 1;
 
-    if (bit1)
+    if (bit1 == 1)
         *config |= 0b00000010; // set bit 1 to 1
     else
         *config &= ~(0b00000010); // set bit 1 to 0
@@ -339,21 +482,33 @@ void bmp280_write_config(bmp280_conf_t bmp, uint8_t* config)
  * @param temp_degC pointer to temperature in degrees Celsius
  * @param press_Pa pointer to pressure in Pascals
 */
-void bmp280_read_temp_and_press(bmp280_conf_t bmp, float* temp_degC, float* press_Pa)
+void bmp280_read_temp_and_press(bmp280_conf_t bmp, double* temp_degC, double* press_Pa)
 {
     uint8_t data[6] = {0, 0, 0, 0, 0, 0};
 
-    i2c_read(bmp, BMP280_TEMP_MSB, data, 6);
+    i2c_read(bmp, BMP280_PRESS_MSB, data, 6);
 
-    int32_t temp = (int32_t)((uint32_t)data[0] << 12) | ((uint32_t)data[1] << 4) | ((uint32_t)data[2] >> 4);
-    int32_t press = (int32_t)((uint32_t)data[3] << 12) | ((uint32_t)data[4] << 4) | ((uint32_t)data[5] >> 4);
+    int32_t temp = (int32_t)((uint32_t)data[3] << 12) | ((uint32_t)data[4] << 4) | ((uint32_t)data[5] >> 4);
+    int32_t press = (int32_t)((uint32_t)data[0] << 12) | ((uint32_t)data[1] << 4) | ((uint32_t)data[2] >> 4);
 
-    int32_t comp_temp = 0;
-    uint32_t comp_press = 0;
-    bmp280_compensate_T_P(bmp, temp, &comp_temp, press, &comp_press);
-
-    *temp_degC = (float)comp_temp / 100.0f;
-    *press_Pa = (float)comp_press / 256.0f;
+    // compensate measurements
+    bmp280_compensate_T_P_double(bmp, temp, temp_degC, press, press_Pa);
 }
 
 
+/**
+ * @brief read height from BMP280
+ * 
+ * @param bmp struct with BMP280 parameters
+ * @param height_m pointer to height in meters
+*/
+void bmp280_read_height(bmp280_conf_t bmp, double* height_m)
+{
+    double temp_degC = 0.0;
+    double press_Pa = 0.0;
+
+    bmp280_read_temp_and_press(bmp, &temp_degC, &press_Pa);
+
+    // h = -(R*T_0)/(M*g)*ln(p_h/p_0)
+    *height_m = -R * T0 / M / G * log(press_Pa / P0);
+}
