@@ -223,6 +223,7 @@ static void bmp280_compensate_T_P_double(bmp280_conf_t bmp, int32_t adc_T, doubl
 */
 void bmp280_init(bmp280_conf_t bmp, enum bmp280_res res)
 {
+#ifdef BMP280_I2C_INIT
     if (bmp.i2c_freq > BMP280_MAX_FREQ)
     {
         bmp.i2c_freq = BMP280_MAX_FREQ;
@@ -241,6 +242,7 @@ void bmp280_init(bmp280_conf_t bmp, enum bmp280_res res)
 
     ESP_ERROR_CHECK(i2c_param_config(bmp.i2c_port, &i2c_config));
     ESP_ERROR_CHECK(i2c_driver_install(bmp.i2c_port, i2c_config.mode, 0, 0, 0));
+#endif
 
     // reset
     bmp280_reset(bmp);
@@ -299,7 +301,9 @@ void bmp280_init(bmp280_conf_t bmp, enum bmp280_res res)
 */
 void bmp280_deinit(bmp280_conf_t bmp)
 {
+#ifdef BMP280_I2C_INIT
     ESP_ERROR_CHECK(i2c_driver_delete(bmp.i2c_port));
+#endif
 }
 
 

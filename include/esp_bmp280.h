@@ -13,6 +13,8 @@
 #include "driver/i2c.h"
 #include "esp_log.h"
 
+// #define BMP280_I2C_INIT   1 // uncomment to initialize I2C driver
+
 #define BMP_I2C_ADDRESS_0 0x76 // if SDO pin is low
 #define BMP_I2C_ADDRESS_1 0x77 // if SDO pin is high
 
