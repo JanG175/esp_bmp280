@@ -9,6 +9,8 @@
 #include <stdio.h>
 #include "esp_bmp280.h"
 
+static double pressure_sea_level = P0;
+
 static const char *TAG = "BMP280";
 
 
@@ -246,7 +248,7 @@ void bmp280_init(bmp280_conf_t bmp, enum bmp280_res res)
 
     // reset
     bmp280_reset(bmp);
-    vTaskDelay(100 / portTICK_PERIOD_MS);
+    vTaskDelay(10 / portTICK_PERIOD_MS);
 
     // set mode
     uint8_t ctrl_meas = 0;
@@ -285,12 +287,22 @@ void bmp280_init(bmp280_conf_t bmp, enum bmp280_res res)
     bmp280_write_ctrl_meas(bmp, &ctrl_meas);
     bmp280_write_config(bmp, &config);
 
-    double temp_degC = 0.0;
-    double press_Pa = 0.0;
-    bmp280_read_temp_and_press(bmp, &temp_degC, &press_Pa);
+    vTaskDelay(100 / portTICK_PERIOD_MS);
 
-    bmp280_read_config(bmp, &config);
-    bmp280_read_ctrl_meas(bmp, &ctrl_meas);
+    // calibrate sea level pressure
+    double temp_degC = 0.0;
+    double press_Pa[10];
+
+    for (uint32_t i = 0; i < 10; i++)
+    {
+        bmp280_read_temp_and_press(bmp, &temp_degC, &press_Pa[i]);
+        vTaskDelay(10 / portTICK_PERIOD_MS);
+    }
+
+    pressure_sea_level = 0.0;
+    for (uint32_t i = 0; i < 10; i++)
+        pressure_sea_level += press_Pa[i];
+    pressure_sea_level /= 10.0;
 }
 
 
@@ -514,5 +526,5 @@ void bmp280_read_height(bmp280_conf_t bmp, double* height_m)
     bmp280_read_temp_and_press(bmp, &temp_degC, &press_Pa);
 
     // h = -(R*T_0)/(M*g)*ln(p_h/p_0)
-    *height_m = -R * T0 / M / G * log(press_Pa / P0);
+    *height_m = -R * T0 / M / G * log(press_Pa / pressure_sea_level);
 }
