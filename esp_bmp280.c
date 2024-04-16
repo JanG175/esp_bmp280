@@ -9,10 +9,13 @@
 #include <stdio.h>
 #include "esp_bmp280.h"
 
+static double pressure_sea_level = P0;
 #ifdef BMP280_I2C_INIT
-i2c_master_bus_handle_t bus_handle;
+static i2c_master_bus_handle_t bus_handle;
+#else
+extern i2c_master_bus_handle_t bus_handle;
 #endif
-i2c_master_dev_handle_t dev_handle;
+static i2c_master_dev_handle_t dev_handle;
 
 static const char *TAG = "BMP280";
 
