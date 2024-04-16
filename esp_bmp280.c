@@ -9,88 +9,12 @@
 #include <stdio.h>
 #include "esp_bmp280.h"
 
-static double pressure_sea_level = P0;
+#ifdef BMP280_I2C_INIT
+i2c_master_bus_handle_t bus_handle;
+#endif
+i2c_master_dev_handle_t dev_handle;
 
 static const char *TAG = "BMP280";
-
-
-/**
- * @brief send data to BMP280 register
- * 
- * @param bmp struct with BMP280 parameters
- * @param reg register to write to
- * @param data pointer data to write
- * @param data_len length of data to write
-*/
-static void i2c_send(bmp280_conf_t bmp, uint8_t reg, uint8_t* data, uint32_t data_len)
-{
-    esp_err_t err;
-    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-
-    err = i2c_master_start(cmd);
-    assert(err == ESP_OK);
-
-    err = i2c_master_write_byte(cmd, (bmp.i2c_addr << 1) | I2C_MASTER_WRITE, true);
-    assert(err == ESP_OK);
-
-    for (uint32_t i = 0; i < data_len; i++)
-    {
-        err = i2c_master_write_byte(cmd, reg + i, true);
-        assert(err == ESP_OK);
-
-        err = i2c_master_write_byte(cmd, *(data + i), true);
-        assert(err == ESP_OK);
-    }
-
-    err = i2c_master_stop(cmd);
-    assert(err == ESP_OK);
-
-    err = i2c_master_cmd_begin(bmp.i2c_port, cmd, BMP280_TIMEOUT);
-    assert(err == ESP_OK);
-
-    i2c_cmd_link_delete(cmd);
-}
-
-
-/**
- * @brief read data from BMP280 register
- * 
- * @param bmp struct with BMP280 parameters
- * @param reg register to read from
- * @param data pointer to data to read
- * @param data_len length of data to read
-*/
-static void i2c_read(bmp280_conf_t bmp, uint8_t reg, uint8_t* data, uint32_t data_len)
-{
-    esp_err_t err;
-    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-
-    err = i2c_master_start(cmd);
-    assert(err == ESP_OK);
-
-    err = i2c_master_write_byte(cmd, (bmp.i2c_addr << 1) | I2C_MASTER_WRITE, true);
-    assert(err == ESP_OK);
-
-    err = i2c_master_write_byte(cmd, reg, true);
-    assert(err == ESP_OK);
-
-    err = i2c_master_start(cmd);
-    assert(err == ESP_OK);
-
-    err = i2c_master_write_byte(cmd, (bmp.i2c_addr << 1) | I2C_MASTER_READ, true);
-    assert(err == ESP_OK);
-
-    err = i2c_master_read(cmd, data, data_len, I2C_MASTER_LAST_NACK);
-    assert(err == ESP_OK);
-
-    err = i2c_master_stop(cmd);
-    assert(err == ESP_OK);
-
-    err = i2c_master_cmd_begin(bmp.i2c_port, cmd, BMP280_TIMEOUT);
-    assert(err == ESP_OK);
-
-    i2c_cmd_link_delete(cmd);
-}
 
 
 /**
@@ -105,7 +29,8 @@ static void i2c_read(bmp280_conf_t bmp, uint8_t reg, uint8_t* data, uint32_t dat
 static void bmp280_compensate_T_P_int(bmp280_conf_t bmp, int32_t adc_T, float* T, int32_t adc_P, float* P)
 {
     uint8_t dig_calib[24];
-    i2c_read(bmp, BMP280_CALIB_00, dig_calib, 24);
+    uint8_t reg = BMP280_CALIB_00;
+    ESP_ERROR_CHECK(i2c_master_transmit_receive(dev_handle, &reg, 1, dig_calib, 24, BMP280_TIMEOUT_MS));
 
     uint16_t dig_T1 = ((uint16_t)dig_calib[1] << 8) | (uint16_t)dig_calib[0];
     int16_t dig_T2 = ((int16_t)dig_calib[3] << 8) | (int16_t)dig_calib[2];
@@ -170,7 +95,8 @@ static void bmp280_compensate_T_P_int(bmp280_conf_t bmp, int32_t adc_T, float* T
 static void bmp280_compensate_T_P_double(bmp280_conf_t bmp, int32_t adc_T, double* T, int32_t adc_P, double* P)
 {
     uint8_t dig_calib[24];
-    i2c_read(bmp, BMP280_CALIB_00, dig_calib, 24);
+    uint8_t reg = BMP280_CALIB_00;
+    ESP_ERROR_CHECK(i2c_master_transmit_receive(dev_handle, &reg, 1, dig_calib, 24, BMP280_TIMEOUT_MS));
 
     uint16_t dig_T1 = ((uint16_t)dig_calib[1] << 8) | (uint16_t)dig_calib[0];
     int16_t dig_T2 = ((int16_t)dig_calib[3] << 8) | (int16_t)dig_calib[2];
@@ -226,25 +152,23 @@ static void bmp280_compensate_T_P_double(bmp280_conf_t bmp, int32_t adc_T, doubl
 void bmp280_init(bmp280_conf_t bmp, enum bmp280_res res)
 {
 #ifdef BMP280_I2C_INIT
-    if (bmp.i2c_freq > BMP280_MAX_FREQ)
-    {
-        bmp.i2c_freq = BMP280_MAX_FREQ;
-        ESP_LOGW(TAG, "I2C frequency too high, set to max value (%d Hz)", BMP280_MAX_FREQ);
-    }
-
-    i2c_config_t i2c_config = {
-        .mode = I2C_MODE_MASTER,
-        .sda_io_num = bmp.sda_pin,
-        .sda_pullup_en = GPIO_PULLUP_ENABLE,
+    i2c_master_bus_config_t i2c_mst_config = {
+        .clk_source = I2C_CLK_SRC_DEFAULT,
+        .i2c_port = bmp.i2c_port,
         .scl_io_num = bmp.scl_pin,
-        .scl_pullup_en = GPIO_PULLUP_ENABLE,
-        .master.clk_speed = bmp.i2c_freq,
-        .clk_flags = 0
+        .sda_io_num = bmp.sda_pin,
+        .glitch_ignore_cnt = 7,
+        .flags.enable_internal_pullup = true
     };
-
-    ESP_ERROR_CHECK(i2c_param_config(bmp.i2c_port, &i2c_config));
-    ESP_ERROR_CHECK(i2c_driver_install(bmp.i2c_port, i2c_config.mode, 0, 0, 0));
+    ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_mst_config, &bus_handle));
 #endif
+
+    i2c_device_config_t dev_cfg = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = bmp.i2c_addr,
+        .scl_speed_hz = bmp.i2c_freq
+    };
+    ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_handle, &dev_cfg, &dev_handle));
 
     // reset
     bmp280_reset(bmp);
@@ -313,8 +237,10 @@ void bmp280_init(bmp280_conf_t bmp, enum bmp280_res res)
 */
 void bmp280_deinit(bmp280_conf_t bmp)
 {
+    ESP_ERROR_CHECK(i2c_master_bus_rm_device(dev_handle));
+
 #ifdef BMP280_I2C_INIT
-    ESP_ERROR_CHECK(i2c_driver_delete(bmp.i2c_port));
+    ESP_ERROR_CHECK(i2c_del_master_bus(bus_handle));
 #endif
 }
 
@@ -327,7 +253,8 @@ void bmp280_deinit(bmp280_conf_t bmp)
 */
 void bmp280_read_id(bmp280_conf_t bmp, uint8_t* id)
 {
-    i2c_read(bmp, BMP280_ID, id, 1);
+    uint8_t reg = BMP280_ID;
+    ESP_ERROR_CHECK(i2c_master_transmit_receive(dev_handle, &reg, 1, id, 1, BMP280_TIMEOUT_MS));
 }
 
 
@@ -338,8 +265,8 @@ void bmp280_read_id(bmp280_conf_t bmp, uint8_t* id)
 */
 void bmp280_reset(bmp280_conf_t bmp)
 {
-    uint8_t data = 0xB6;
-    i2c_send(bmp, BMP280_RESET, &data, 1);
+    uint8_t data[2] = {BMP280_RESET_0, 0x6B};
+    ESP_ERROR_CHECK(i2c_master_transmit(dev_handle, data, 2, BMP280_TIMEOUT_MS));
 }
 
 
@@ -351,7 +278,8 @@ void bmp280_reset(bmp280_conf_t bmp)
 */
 void bmp280_read_status(bmp280_conf_t bmp, uint8_t* status)
 {
-    i2c_read(bmp, BMP280_STATUS, status, 1);
+    uint8_t reg = BMP280_STATUS;
+    ESP_ERROR_CHECK(i2c_master_transmit_receive(dev_handle, &reg, 1, status, 1, BMP280_TIMEOUT_MS));
 
     if (*status & 0b00001000)
         ESP_LOGI(TAG, "BMP280 is measuring!");
@@ -368,7 +296,8 @@ void bmp280_read_status(bmp280_conf_t bmp, uint8_t* status)
 */
 void bmp280_read_ctrl_meas(bmp280_conf_t bmp, uint8_t* ctrl_meas)
 {
-    i2c_read(bmp, BMP280_CTRL_MEAS, ctrl_meas, 1);
+    uint8_t reg = BMP280_CTRL_MEAS;
+    ESP_ERROR_CHECK(i2c_master_transmit_receive(dev_handle, &reg, 1, ctrl_meas, 1, BMP280_TIMEOUT_MS));
 
     // osrs_t
     if ((*ctrl_meas & 0b11100000) == 0b00000000)
@@ -416,7 +345,8 @@ void bmp280_read_ctrl_meas(bmp280_conf_t bmp, uint8_t* ctrl_meas)
 */
 void bmp280_write_ctrl_meas(bmp280_conf_t bmp, uint8_t* ctrl_meas)
 {
-    i2c_send(bmp, BMP280_CTRL_MEAS, ctrl_meas, 1);
+    uint8_t data[2] = {BMP280_CTRL_MEAS, *ctrl_meas};
+    ESP_ERROR_CHECK(i2c_master_transmit(dev_handle, data, 2, BMP280_TIMEOUT_MS));
 }
 
 
@@ -428,7 +358,8 @@ void bmp280_write_ctrl_meas(bmp280_conf_t bmp, uint8_t* ctrl_meas)
 */
 void bmp280_read_config(bmp280_conf_t bmp, uint8_t* config)
 {
-    i2c_read(bmp, BMP280_CONFIG, config, 1);
+    uint8_t reg = BMP280_CONFIG;
+    ESP_ERROR_CHECK(i2c_master_transmit_receive(dev_handle, &reg, 1, config, 1, BMP280_TIMEOUT_MS));
 
     // t_sb
     if ((*config & 0b11100000) == 0b00000000)
@@ -477,7 +408,9 @@ void bmp280_read_config(bmp280_conf_t bmp, uint8_t* config)
 void bmp280_write_config(bmp280_conf_t bmp, uint8_t* config)
 {
     uint8_t old_config = 0;
-    i2c_read(bmp, BMP280_CONFIG, &old_config, 1);
+    uint8_t reg = BMP280_CONFIG;
+    ESP_ERROR_CHECK(i2c_master_transmit_receive(dev_handle, &reg, 1, &old_config, 1, BMP280_TIMEOUT_MS));
+
     vTaskDelay(1);
 
     uint8_t bit1 = (old_config & 0b00000010) >> 1;
@@ -487,7 +420,8 @@ void bmp280_write_config(bmp280_conf_t bmp, uint8_t* config)
     else
         *config &= ~(0b00000010); // set bit 1 to 0
 
-    i2c_send(bmp, BMP280_CONFIG, config, 1);
+    uint8_t data[2] = {BMP280_CONFIG, *config};
+    ESP_ERROR_CHECK(i2c_master_transmit(dev_handle, data, 2, BMP280_TIMEOUT_MS));
 }
 
 
@@ -501,8 +435,8 @@ void bmp280_write_config(bmp280_conf_t bmp, uint8_t* config)
 void bmp280_read_temp_and_press(bmp280_conf_t bmp, double* temp_degC, double* press_Pa)
 {
     uint8_t data[6] = {0, 0, 0, 0, 0, 0};
-
-    i2c_read(bmp, BMP280_PRESS_MSB, data, 6);
+    uint8_t reg = BMP280_PRESS_MSB;
+    ESP_ERROR_CHECK(i2c_master_transmit_receive(dev_handle, &reg, 1, data, 6, BMP280_TIMEOUT_MS));
 
     int32_t temp = (int32_t)((uint32_t)data[3] << 12) | ((uint32_t)data[4] << 4) | ((uint32_t)data[5] >> 4);
     int32_t press = (int32_t)((uint32_t)data[0] << 12) | ((uint32_t)data[1] << 4) | ((uint32_t)data[2] >> 4);

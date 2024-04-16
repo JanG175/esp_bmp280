@@ -10,7 +10,7 @@
 #include <math.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "driver/i2c.h"
+#include "driver/i2c_master.h"
 #include "esp_log.h"
 
 // #define BMP280_I2C_INIT   1 // uncomment to initialize I2C driver
@@ -20,7 +20,7 @@
 
 #define BMP280_MAX_FREQ   3400000 // 3.4 MHz
 
-#define BMP280_TIMEOUT    (100 / portTICK_PERIOD_MS)
+#define BMP280_TIMEOUT_MS 100
 
 // register map
 #define BMP280_TEMP_XLSB  0xFC
