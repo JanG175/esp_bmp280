@@ -441,8 +441,8 @@ void bmp280_read_temp_and_press(bmp280_conf_t bmp, double* temp_degC, double* pr
     uint8_t reg = BMP280_PRESS_MSB;
     ESP_ERROR_CHECK(i2c_master_transmit_receive(dev_handle, &reg, 1, data, 6, BMP280_TIMEOUT_MS));
 
-    int32_t temp = (int32_t)((uint32_t)data[3] << 12) | ((uint32_t)data[4] << 4) | ((uint32_t)data[5] >> 4);
-    int32_t press = (int32_t)((uint32_t)data[0] << 12) | ((uint32_t)data[1] << 4) | ((uint32_t)data[2] >> 4);
+    int32_t temp = (int32_t)(((uint32_t)data[3] << 12) | ((uint32_t)data[4] << 4) | ((uint32_t)data[5] >> 4));
+    int32_t press = (int32_t)(((uint32_t)data[0] << 12) | ((uint32_t)data[1] << 4) | ((uint32_t)data[2] >> 4));
 
     // compensate measurements
     bmp280_compensate_T_P_double(bmp, temp, temp_degC, press, press_Pa);
