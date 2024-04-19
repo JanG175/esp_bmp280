@@ -268,7 +268,7 @@ void bmp280_read_id(bmp280_conf_t bmp, uint8_t* id)
 */
 void bmp280_reset(bmp280_conf_t bmp)
 {
-    uint8_t data[2] = {BMP280_RESET_0, 0x6B};
+    uint8_t data[2] = {BMP280_RESET_0, 0xB6};
     ESP_ERROR_CHECK(i2c_master_transmit(dev_handle, data, 2, BMP280_TIMEOUT_MS));
 }
 
