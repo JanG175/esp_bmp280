@@ -20,7 +20,7 @@
 
 #define BMP280_MAX_FREQ      3400000 // 3.4 MHz
 
-#define BMP280_TIMEOUT_MS    100
+#define BMP280_TIMEOUT_MS    1
 
 // register map  
 #define BMP280_TEMP_XLSB     0xFC
@@ -90,4 +90,4 @@ void bmp280_write_config(bmp280_conf_t bmp, uint8_t* config);
 
 void bmp280_read_temp_and_press(bmp280_conf_t bmp, double* temp_degC, double* press_Pa);
 
-void bmp280_read_height(bmp280_conf_t bmp, double* height_m);
+void bmp280_read_height(bmp280_conf_t bmp, float* height_m);

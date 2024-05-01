@@ -455,7 +455,7 @@ void bmp280_read_temp_and_press(bmp280_conf_t bmp, double* temp_degC, double* pr
  * @param bmp struct with BMP280 parameters
  * @param height_m pointer to height in meters
 */
-void bmp280_read_height(bmp280_conf_t bmp, double* height_m)
+void bmp280_read_height(bmp280_conf_t bmp, float* height_m)
 {
     double temp_degC = 0.0;
     double press_Pa = 0.0;
@@ -463,5 +463,5 @@ void bmp280_read_height(bmp280_conf_t bmp, double* height_m)
     bmp280_read_temp_and_press(bmp, &temp_degC, &press_Pa);
 
     // h = -(R*T_0)/(M*g)*ln(p_h/p_0)
-    *height_m = -R * T0 / M / G * log(press_Pa / pressure_sea_level);
+    *height_m = (float)(-R * T0 / M / G * log(press_Pa / pressure_sea_level));
 }
