@@ -118,7 +118,7 @@ static void bmp280_compensate_T_P_double(bmp280_conf_t bmp, int32_t adc_T, doubl
     double tvar1, tvar2, t_fine, pvar1, pvar2, p;
 
     tvar1 = (((double)adc_T) / 16384.0 - ((double)dig_T1) / 1024.0) * ((double)dig_T2);
-    tvar2 = ((((double)adc_T) / 131072.0 - ((double)dig_T1)/8192.0) * (((double)adc_T) / 131072.0 - ((double)dig_T1) / 8192.0)) * ((double)dig_T3);
+    tvar2 = ((((double)adc_T) / 131072.0 - ((double)dig_T1) / 8192.0) * (((double)adc_T) / 131072.0 - ((double)dig_T1) / 8192.0)) * ((double)dig_T3);
     t_fine = tvar1 + tvar2;
     *T = (tvar1 + tvar2) / 5120.0; 
 
@@ -223,7 +223,7 @@ void bmp280_init(bmp280_conf_t bmp, enum bmp280_res res)
     for (uint32_t i = 0; i < 10; i++)
     {
         bmp280_read_temp_and_press(bmp, &temp_degC, &press_Pa[i]);
-        vTaskDelay(10 / portTICK_PERIOD_MS);
+        vTaskDelay(40 / portTICK_PERIOD_MS);
     }
 
     pressure_sea_level = 0.0;
@@ -462,6 +462,5 @@ void bmp280_read_height(bmp280_conf_t bmp, float* height_m)
 
     bmp280_read_temp_and_press(bmp, &temp_degC, &press_Pa);
 
-    // h = -(R*T_0)/(M*g)*ln(p_h/p_0)
-    *height_m = (float)(-R * T0 / M / G * log(press_Pa / pressure_sea_level));
+    *height_m = 44330.0f * (1.0f - (float)pow(press_Pa / pressure_sea_level, 1.0 / 5.255));
 }

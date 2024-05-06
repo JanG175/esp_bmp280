@@ -43,11 +43,7 @@
 #define BMP280_RESET_2       0x58
 
 // physical constants
-#define R    8.314462618 // J/(mol*K)
-#define M    0.02896968 // kg/mol
-#define G    9.810665 // m/s^2
-#define P0   101325.0 // Pa
-#define T0   288.15 // K
+#define P0                   101325.0 // Pa
 
 typedef struct
 {
