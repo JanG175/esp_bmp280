@@ -17,6 +17,8 @@ extern i2c_master_bus_handle_t bus_handle;
 #endif
 static i2c_master_dev_handle_t dev_handle;
 
+static portMUX_TYPE spinlock = portMUX_INITIALIZER_UNLOCKED;
+
 static const char *TAG = "BMP280";
 
 
@@ -463,4 +465,22 @@ void bmp280_read_height(bmp280_conf_t bmp, float* height_m)
     bmp280_read_temp_and_press(bmp, &temp_degC, &press_Pa);
 
     *height_m = 44330.0f * (1.0f - (float)pow(press_Pa / pressure_sea_level, 1.0 / 5.255));
+}
+
+
+/**
+ * @brief set sea level pressure for height calculation
+ * 
+ * @param bmp struct with BMP280 parameters
+*/
+void bmp280_set_sea_level_pressure(bmp280_conf_t bmp)
+{
+    double temp_degC = 0.0;
+    double press_Pa = 0.0;
+
+    bmp280_read_temp_and_press(bmp, &temp_degC, &press_Pa);
+
+    portENTER_CRITICAL(&spinlock);
+    pressure_sea_level = press_Pa;
+    portEXIT_CRITICAL(&spinlock);
 }

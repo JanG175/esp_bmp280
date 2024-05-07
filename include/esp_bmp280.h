@@ -87,3 +87,5 @@ void bmp280_write_config(bmp280_conf_t bmp, uint8_t* config);
 void bmp280_read_temp_and_press(bmp280_conf_t bmp, double* temp_degC, double* press_Pa);
 
 void bmp280_read_height(bmp280_conf_t bmp, float* height_m);
+
+void bmp280_set_sea_level_pressure(bmp280_conf_t bmp);
