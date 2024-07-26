@@ -13,14 +13,14 @@
 #include "driver/i2c_master.h"
 #include "esp_log.h"
 
-// #define BMP280_I2C_INIT   1 // uncomment to initialize I2C driver
+// #define BMP280_I2C_INIT      1 // uncomment to initialize I2C driver
 
 #define BMP280_I2C_ADDRESS_0 0x76 // if SDO pin is low
 #define BMP280_I2C_ADDRESS_1 0x77 // if SDO pin is high
 
 #define BMP280_MAX_FREQ      3400000 // 3.4 MHz
 
-#define BMP280_TIMEOUT_MS    1
+#define BMP280_TIMEOUT_MS    2
 
 // register map  
 #define BMP280_TEMP_XLSB     0xFC

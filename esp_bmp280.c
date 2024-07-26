@@ -10,6 +10,7 @@
 #include "esp_bmp280.h"
 
 static double pressure_sea_level = P0;
+
 #ifdef BMP280_I2C_INIT
 static i2c_master_bus_handle_t bus_handle;
 #else
@@ -19,7 +20,7 @@ static i2c_master_dev_handle_t dev_handle;
 
 static portMUX_TYPE spinlock = portMUX_INITIALIZER_UNLOCKED;
 
-static const char *TAG = "BMP280";
+static const char* TAG = "BMP280";
 
 
 /**
